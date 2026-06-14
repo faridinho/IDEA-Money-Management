@@ -109,10 +109,13 @@ COrderInfo      g_order;
 CAccountInfo    g_account;
 CSymbolInfo     g_symbol;
 
-//--- Line object names
-const string LINE_ENTRY  = "IDEA_Entry";
-const string LINE_SL     = "IDEA_SL";
-const string LINE_TP     = "IDEA_TP";
+//--- Line object names (must match CHARTEVENT_OBJECT_DRAG sparam)
+const string LINE_ENTRY  = "IDEAMM_LINE_ENTRY";
+const string LINE_SL     = "IDEAMM_LINE_SL";
+const string LINE_TP     = "IDEAMM_LINE_TP";
+
+//--- Info label object name
+const string LABEL_INFO  = "IDEAMM_LABEL_INFO";
 
 //--- Panel object name prefix
 const string PANEL_PREFIX = "IDEA_Panel_";
@@ -172,6 +175,11 @@ int OnInit()
    PrintFormat("OnInit: magic=%d slippage=%d fillMode=%d dayBalance=%.2f",
                InpMagicNumber, InpSlippage, (int)fillMode, g_dayStartBalance);
 
+   //--- Draw default lines: entry=Ask, SL=50 pips below, TP=100 pips above
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double pip   = _Point * 10;
+   DrawLines(ask, ask - 50.0 * pip, ask + 100.0 * pip);
+
    return INIT_SUCCEEDED;
 }
 
@@ -180,6 +188,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   DeleteLines();
+   DeletePanel();
+   ObjectDelete(0, LABEL_INFO);
 }
 
 //+------------------------------------------------------------------+
@@ -194,6 +205,37 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
+   if(id == CHARTEVENT_OBJECT_DRAG &&
+      (sparam == LINE_ENTRY || sparam == LINE_SL || sparam == LINE_TP))
+   {
+      double entry = GetLinePrice(LINE_ENTRY);
+      double sl    = GetLinePrice(LINE_SL);
+      double tp    = GetLinePrice(LINE_TP);
+
+      double lot     = CalculateLotSize(entry, sl);
+      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double riskAmt = balance * InpRiskPercent / 100.0;
+
+      double slDist  = MathAbs(entry - sl);
+      double tpDist  = MathAbs(tp - entry);
+      double rr      = (slDist > 0.0) ? tpDist / slDist : 0.0;
+
+      string txt = StringFormat("Lot: %.2f | Risk: $%.2f | R:R: 1:%.1f", lot, riskAmt, rr);
+
+      if(ObjectFind(0, LABEL_INFO) < 0)
+      {
+         ObjectCreate(0, LABEL_INFO, OBJ_LABEL, 0, 0, 0);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_CORNER,     CORNER_LEFT_UPPER);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_XDISTANCE,  10);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_YDISTANCE,  20);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_COLOR,      clrWhite);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_FONTSIZE,   10);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, LABEL_INFO, OBJPROP_BACK,       false);
+      }
+      ObjectSetString(0, LABEL_INFO, OBJPROP_TEXT, txt);
+      ChartRedraw(0);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -385,13 +427,31 @@ bool ClosePosition(ulong ticket, double volumePct = 100.0)
    return false;
 }
 
+//--- Internal helper: create/replace one horizontal draggable line
+void CreateHLine(const string name, double price, color clr, const string label)
+{
+   ObjectDelete(0, name);
+   ObjectCreate(0, name, OBJ_HLINE, 0, 0, price);
+   ObjectSetInteger(0, name, OBJPROP_COLOR,      clr);
+   ObjectSetInteger(0, name, OBJPROP_STYLE,      STYLE_DASH);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH,      InpLineWidth);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED,   false);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT,  true);
+   ObjectSetString (0, name, OBJPROP_TOOLTIP,    label + ": " + DoubleToString(price, _Digits));
+}
+
 //+------------------------------------------------------------------+
 //| Draw / refresh Entry, SL, TP lines on chart                      |
 //+------------------------------------------------------------------+
-//| Called on init and when user clicks "Draw Lines" in panel.        |
-//+------------------------------------------------------------------+
-void DrawLines(ENUM_TRADE_DIRECTION direction)
+void DrawLines(double entryPrice, double slPrice, double tpPrice)
 {
+   CreateHLine(LINE_ENTRY, entryPrice, InpEntryLineColor, "ENTRY");
+   CreateHLine(LINE_SL,    slPrice,    InpSLLineColor,    "SL");
+   CreateHLine(LINE_TP,    tpPrice,    InpTPLineColor,    "TP");
+   g_linesExist = true;
+   ChartRedraw(0);
+   PrintFormat("DrawLines | entry=%.5f SL=%.5f TP=%.5f", entryPrice, slPrice, tpPrice);
 }
 
 //+------------------------------------------------------------------+
@@ -399,6 +459,12 @@ void DrawLines(ENUM_TRADE_DIRECTION direction)
 //+------------------------------------------------------------------+
 void DeleteLines()
 {
+   ObjectDelete(0, LINE_ENTRY);
+   ObjectDelete(0, LINE_SL);
+   ObjectDelete(0, LINE_TP);
+   g_linesExist = false;
+   ChartRedraw(0);
+   Print("DeleteLines: all lines removed");
 }
 
 //+------------------------------------------------------------------+
@@ -487,7 +553,12 @@ void DeletePanel()
 //+------------------------------------------------------------------+
 double GetLinePrice(const string lineName)
 {
-   return 0.0;
+   if(ObjectFind(0, lineName) < 0)
+   {
+      PrintFormat("GetLinePrice: object '%s' not found", lineName);
+      return 0.0;
+   }
+   return ObjectGetDouble(0, lineName, OBJPROP_PRICE);
 }
 
 //+------------------------------------------------------------------+
