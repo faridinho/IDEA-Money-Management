@@ -1,0 +1,5 @@
+*.ex5
+*.log
+*.ini
+Thumbs.db
+.DS_Store
