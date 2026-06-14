@@ -180,6 +180,14 @@ int OnInit()
    double pip   = _Point * 10;
    DrawLines(ask, ask - 50.0 * pip, ask + 100.0 * pip);
 
+   Print("=== IDEAMM INIT ===");
+   Print("Ask: ", SymbolInfoDouble(_Symbol, SYMBOL_ASK));
+   Print("Lines exist flag: ", g_linesExist);
+   Print("LINE_ENTRY object found: ", ObjectFind(0, LINE_ENTRY));
+   Print("LINE_SL object found: ", ObjectFind(0, LINE_SL));
+   Print("LINE_TP object found: ", ObjectFind(0, LINE_TP));
+   ChartRedraw(0);
+
    return INIT_SUCCEEDED;
 }
 
